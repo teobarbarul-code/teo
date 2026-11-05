@@ -71,6 +71,7 @@ function windDay(f, i) {
   const dir = circ(d);
   return { w: avg(w), g: Math.max(...g), dir, off: dir >= OFFSHORE[0] && dir <= OFFSHORE[1] };
 }
+const NONE = '<div class="row"><div class="v"><small>Nicio zi bună în săptămâna asta.</small></div></div>';
 const badge = (c, t) => `<span class="b ${c}">${t}</span>`;
 
 /* ---- Carduri: adaugi unul nou = o funcție nouă în CARDS ---- */
@@ -79,12 +80,14 @@ const CARDS = [
     const f = await fc(SPOTS.kite);
     const rows = f.daily.time.map((d, i) => {
       const x = windDay(f, i);
-      let b = badge("no", "Nu");
-      if (x.off) b = badge("warn", "Dinspre uscat");
-      else if (x.w >= KITE.min && x.w <= KITE.max && x.g <= KITE.gustMax) b = badge("ok", "Bun");
-      else if (x.w >= KITE.min - 2 && x.w <= KITE.max + 3) b = badge("warn", "Posibil");
+      let b = null;
+      if (!x.off) {
+        if (x.w >= KITE.min && x.w <= KITE.max && x.g <= KITE.gustMax) b = badge("ok", "Bun");
+        else if (x.w >= KITE.min - 2 && x.w <= KITE.max + 3) b = badge("warn", "Posibil");
+      }
+      if (!b) return "";
       return `<div class="row"><div class="d">${dayName(d)}</div><div class="v"><span class="t">${Math.round(x.w)}</span> kn, rafale ${Math.round(x.g)} <small>${comp(x.dir)}</small></div>${b}</div>`;
-    }).join("");
+    }).join("") || NONE;
     return card("🪁 Kite", SPOTS.kite.name, `Bun: ${KITE.min}–${KITE.max} kn, rafale sub ${KITE.gustMax}`, rows);
   }},
   { id: "sup", async render() {
@@ -92,13 +95,15 @@ const CARDS = [
     const rows = f.daily.time.map((d, i) => {
       const x = windDay(f, i);
       const wv = m ? Math.max(...hours(m.hourly, i, "wave_height").filter(v => v != null)) : null;
-      let b = badge("no", "Nu");
+      let b = null;
       const waveOk = wv == null || wv <= SUP.waveMax;
-      if (x.off && x.w > 5) b = badge("warn", "Dinspre uscat");
-      else if (x.w <= SUP.windMax && waveOk) b = badge("ok", "Bun");
-      else if (x.w <= SUP.windMax + 3 && (wv == null || wv <= SUP.waveMax + 0.3)) b = badge("warn", "Posibil");
+      if (!(x.off && x.w > 5)) {
+        if (x.w <= SUP.windMax && waveOk) b = badge("ok", "Bun");
+        else if (x.w <= SUP.windMax + 3 && (wv == null || wv <= SUP.waveMax + 0.3)) b = badge("warn", "Posibil");
+      }
+      if (!b) return "";
       return `<div class="row"><div class="d">${dayName(d)}</div><div class="v"><span class="t">${Math.round(x.w)}</span> kn <small>${comp(x.dir)}</small>${wv != null ? `, val ${wv.toFixed(1)} m` : ""}</div>${b}</div>`;
-    }).join("");
+    }).join("") || NONE;
     return card("🏄 SUP", SPOTS.sup.name, `Bun: vânt sub ${SUP.windMax} kn, val sub ${SUP.waveMax} m`, rows);
   }},
   { id: "vreme", async render() {
