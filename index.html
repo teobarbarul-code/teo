@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Teo">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Teo</title>
+<style>
+:root{--bg:#f2f4f7;--card:#fff;--tx:#14181f;--mut:#6b7380;--ok:#1a9d55;--no:#d64545;--warn:#d89614;--line:#e3e7ec;--ac:#1f6feb;color-scheme:light}
+@media(prefers-color-scheme:dark){:root{--bg:#0d1117;--card:#161b22;--tx:#e6edf3;--mut:#8b949e;--line:#262c36;--ac:#58a6ff;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 -apple-system,system-ui,sans-serif}
+body{padding:calc(env(safe-area-inset-top,0px) + 14px) 14px calc(env(safe-area-inset-bottom,0px) + 24px)}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+h1{font-size:22px;margin:0}
+button{font:inherit;border:0;border-radius:10px;padding:8px 14px;background:var(--ac);color:#fff}
+.card{background:var(--card);border-radius:16px;padding:14px;margin-bottom:14px}
+.card h2{font-size:17px;margin:0 0 2px}
+.sub{color:var(--mut);font-size:13px;margin-bottom:8px}
+.row{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+.d{width:42px;font-weight:600;text-transform:capitalize}
+.v{flex:1;font-size:14px}
+.v small{color:var(--mut)}
+.b{font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;color:#fff;white-space:nowrap}
+.ok{background:var(--ok)}.no{background:var(--no)}.warn{background:var(--warn)}
+.t{font-variant-numeric:tabular-nums;font-weight:600}
+.err{color:var(--no);font-size:14px}
+.add{display:flex;gap:8px;margin:8px 0}
+.add input{flex:1;font:inherit;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--tx)}
+.todo{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+.todo input{width:22px;height:22px}
+.todo span{flex:1}
+.todo.done span{text-decoration:line-through;color:var(--mut)}
+.todo i{font-style:normal;color:var(--mut);padding:0 6px;font-size:20px}
+</style>
+</head>
+<body>
+<header><h1>Teo</h1><button id="rf">Actualizează</button></header>
+<div id="cards"></div>
+
+<script>
+/* ===== CONFIG: aici ajustezi spoturile și pragurile ===== */
+const SPOTS = {
+  kite:  { name: "Zoom Beach",     lat: 44.27, lon: 28.63 },
+  sup:   { name: "Plaja Pescărie", lat: 44.18, lon: 28.66 },
+  vreme: { name: "Mamaia Nord",    lat: 44.28, lon: 28.62 }
+};
+const KITE = { min: 12, max: 25, gustMax: 32 };   // noduri
+const SUP  = { windMax: 10, waveMax: 0.5 };       // noduri, metri
+const H0 = 10, H1 = 18;                           // ora de la/până la (ziua)
+const OFFSHORE = [225, 335];                      // vânt dinspre uscat (V) = periculos
+/* ======================================================== */
+
+const TZ = "Europe/Bucharest";
+const $ = s => document.querySelector(s);
+const j = async u => { const r = await fetch(u); if (!r.ok) throw new Error(r.status); return r.json(); };
+const fc = s => j(`https://api.open-meteo.com/v1/forecast?latitude=${s.lat}&longitude=${s.lon}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code&wind_speed_unit=kn&timezone=${TZ}&forecast_days=7`);
+const mr = s => j(`https://marine-api.open-meteo.com/v1/marine?latitude=${s.lat}&longitude=${s.lon}&hourly=wave_height&timezone=${TZ}&forecast_days=7`);
+
+const dayName = d => new Date(d + "T12:00").toLocaleDateString("ro-RO", { weekday: "short" });
+const comp = a => ["N","NE","E","SE","S","SV","V","NV"][Math.round(a / 45) % 8];
+const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+const circ = a => { const s = avg(a.map(x => Math.sin(x * Math.PI / 180))), c = avg(a.map(x => Math.cos(x * Math.PI / 180))); return (Math.atan2(s, c) * 180 / Math.PI + 360) % 360; };
+const wx = c => c === 0 ? "☀️" : c <= 2 ? "🌤️" : c === 3 ? "☁️" : c <= 48 ? "🌫️" : c <= 67 ? "🌧️" : c <= 77 ? "❄️" : c <= 82 ? "🌦️" : "⛈️";
+
+function hours(h, i, key) { return h[key].slice(i * 24 + H0, i * 24 + H1 + 1); }
+function windDay(f, i) {
+  const w = hours(f.hourly, i, "wind_speed_10m"), g = hours(f.hourly, i, "wind_gusts_10m"), d = hours(f.hourly, i, "wind_direction_10m");
+  const dir = circ(d);
+  return { w: avg(w), g: Math.max(...g), dir, off: dir >= OFFSHORE[0] && dir <= OFFSHORE[1] };
+}
+const badge = (c, t) => `<span class="b ${c}">${t}</span>`;
+
+/* ---- Carduri: adaugi unul nou = o funcție nouă în CARDS ---- */
+const CARDS = [
+  { id: "kite", async render() {
+    const f = await fc(SPOTS.kite);
+    const rows = f.daily.time.map((d, i) => {
+      const x = windDay(f, i);
+      let b = badge("no", "Nu");
+      if (x.off) b = badge("warn", "Dinspre uscat");
+      else if (x.w >= KITE.min && x.w <= KITE.max && x.g <= KITE.gustMax) b = badge("ok", "Bun");
+      else if (x.w >= KITE.min - 2 && x.w <= KITE.max + 3) b = badge("warn", "Posibil");
+      return `<div class="row"><div class="d">${dayName(d)}</div><div class="v"><span class="t">${Math.round(x.w)}</span> kn, rafale ${Math.round(x.g)} <small>${comp(x.dir)}</small></div>${b}</div>`;
+    }).join("");
+    return card("🪁 Kite", SPOTS.kite.name, `Bun: ${KITE.min}–${KITE.max} kn, rafale sub ${KITE.gustMax}`, rows);
+  }},
+  { id: "sup", async render() {
+    const [f, m] = await Promise.all([fc(SPOTS.sup), mr(SPOTS.sup).catch(() => null)]);
+    const rows = f.daily.time.map((d, i) => {
+      const x = windDay(f, i);
+      const wv = m ? Math.max(...hours(m.hourly, i, "wave_height").filter(v => v != null)) : null;
+      let b = badge("no", "Nu");
+      const waveOk = wv == null || wv <= SUP.waveMax;
+      if (x.off && x.w > 5) b = badge("warn", "Dinspre uscat");
+      else if (x.w <= SUP.windMax && waveOk) b = badge("ok", "Bun");
+      else if (x.w <= SUP.windMax + 3 && (wv == null || wv <= SUP.waveMax + 0.3)) b = badge("warn", "Posibil");
+      return `<div class="row"><div class="d">${dayName(d)}</div><div class="v"><span class="t">${Math.round(x.w)}</span> kn <small>${comp(x.dir)}</small>${wv != null ? `, val ${wv.toFixed(1)} m` : ""}</div>${b}</div>`;
+    }).join("");
+    return card("🏄 SUP", SPOTS.sup.name, `Bun: vânt sub ${SUP.windMax} kn, val sub ${SUP.waveMax} m`, rows);
+  }},
+  { id: "vreme", async render() {
+    const f = await fc(SPOTS.vreme), dl = f.daily;
+    const rows = dl.time.map((d, i) => `<div class="row"><div class="d">${dayName(d)}</div><div class="v">${wx(dl.weather_code[i])} <span class="t">${Math.round(dl.temperature_2m_min[i])}°</span> / <span class="t">${Math.round(dl.temperature_2m_max[i])}°</span> <small>${dl.precipitation_sum[i] > 0.1 ? "🌧 " + dl.precipitation_sum[i].toFixed(1) + " mm" : ""}</small></div></div>`).join("");
+    return card("🌡️ Vremea", SPOTS.vreme.name, "Min / max pe zile", rows);
+  }},
+  { id: "todo", async render() { return todoCard(); } }
+];
+
+const card = (t, place, sub, rows) => `<div class="card"><h2>${t} · ${place}</h2><div class="sub">${sub}</div>${rows}</div>`;
+
+/* ---- To-do (se salvează pe telefon) ---- */
+let todos = [];
+try { todos = JSON.parse(localStorage.getItem("todos") || "[]"); } catch (e) {}
+const save = () => { try { localStorage.setItem("todos", JSON.stringify(todos)); } catch (e) {} };
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function todoCard() {
+  const items = todos.map((t, i) => `<div class="todo ${t.done ? "done" : ""}"><input type="checkbox" data-t="${i}" ${t.done ? "checked" : ""}><span>${esc(t.text)}</span><i data-x="${i}">×</i></div>`).join("");
+  return `<div class="card" id="todo"><h2>✅ De făcut</h2><div class="add"><input id="ti" placeholder="Adaugă ceva…" enterkeyhint="done"><button id="ta">+</button></div>${items}</div>`;
+}
+function bindTodo() {
+  const add = () => { const v = $("#ti").value.trim(); if (!v) return; todos.unshift({ text: v, done: false }); save(); refreshTodo(); };
+  $("#ta").onclick = add;
+  $("#ti").onkeydown = e => { if (e.key === "Enter") add(); };
+  document.querySelectorAll("[data-t]").forEach(el => el.onchange = () => { todos[+el.dataset.t].done = el.checked; save(); refreshTodo(); });
+  document.querySelectorAll("[data-x]").forEach(el => el.onclick = () => { todos.splice(+el.dataset.x, 1); save(); refreshTodo(); });
+}
+function refreshTodo() { $("#todo").outerHTML = todoCard(); bindTodo(); }
+
+/* ---- Încărcare ---- */
+async function load() {
+  const box = $("#cards");
+  box.innerHTML = CARDS.map(c => `<div id="c-${c.id}"></div>`).join("");
+  await Promise.all(CARDS.map(async c => {
+    const el = $("#c-" + c.id);
+    try { el.innerHTML = await c.render(); if (c.id === "todo") bindTodo(); }
+    catch (e) { el.innerHTML = `<div class="card"><div class="err">Nu am putut încărca „${c.id}”. Verifică netul și apasă Actualizează.</div></div>`; }
+  }));
+}
+$("#rf").onclick = load;
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+load();
+</script>
+</body>
+</html>
