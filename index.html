@@ -28,6 +28,15 @@ button{font:inherit;border:0;border-radius:10px;padding:8px 14px;background:var(
 .b{font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;color:#fff;white-space:nowrap}
 .ok{background:var(--ok)}.no{background:var(--no)}.warn{background:var(--warn)}
 .t{font-variant-numeric:tabular-nums;font-weight:600}
+.wg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.wd{background:rgba(127,127,127,.13);border-radius:12px;padding:8px 4px;text-align:center;font-size:13px;line-height:1.4}
+.wd b{display:block;text-transform:capitalize}
+.wd .tt{font-weight:700;font-size:15px}
+.sp{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.sp h3{font-size:15px;margin:0}
+.sr{display:flex;justify-content:space-between;align-items:center;gap:4px;padding:5px 0;border-top:1px solid var(--line);font-size:13px}
+.sr .d{width:auto}
+.dot{width:11px;height:11px;border-radius:50%;display:inline-block;flex:none}
 .err{color:var(--no);font-size:14px}
 .add{display:flex;gap:8px;margin:8px 0}
 .add input{flex:1;font:inherit;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--tx)}
@@ -59,7 +68,7 @@ const OFFSHORE = [225, 335];                      // vânt dinspre uscat (V) = p
 const TZ = "Europe/Bucharest";
 const $ = s => document.querySelector(s);
 const j = async u => { const r = await fetch(u); if (!r.ok) throw new Error(r.status); return r.json(); };
-const fc = s => j(`https://api.open-meteo.com/v1/forecast?latitude=${s.lat}&longitude=${s.lon}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code&wind_speed_unit=kn&timezone=${TZ}&forecast_days=7`);
+const fc = s => j(`https://api.open-meteo.com/v1/forecast?latitude=${s.lat}&longitude=${s.lon}&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m&daily=wind_speed_10m_max,temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code&wind_speed_unit=kn&timezone=${TZ}&forecast_days=7`);
 const mr = s => j(`https://marine-api.open-meteo.com/v1/marine?latitude=${s.lat}&longitude=${s.lon}&hourly=wave_height&timezone=${TZ}&forecast_days=7`);
 
 const dayName = d => new Date(d + "T12:00").toLocaleDateString("ro-RO", { weekday: "short" });
@@ -74,50 +83,46 @@ function windDay(f, i) {
   const dir = circ(d);
   return { w: avg(w), g: Math.max(...g), dir, off: dir >= OFFSHORE[0] && dir <= OFFSHORE[1] };
 }
-const NONE = '<div class="row"><div class="v"><small>Nicio zi bună în săptămâna asta.</small></div></div>';
+const NONE = '<div class="sr"><small>Nicio zi bună</small></div>';
 const badge = (c, t) => `<span class="b ${c}">${t}</span>`;
 
 /* ---- Carduri: adaugi unul nou = o funcție nouă în CARDS ---- */
 const CARDS = [
-  { id: "kite", async render() {
-    const f = await fc(SPOTS.kite);
-    const rows = f.daily.time.map((d, i) => {
-      const x = windDay(f, i);
-      let b = null;
-      if (!x.off) {
-        if (x.w >= KITE.min && x.w <= KITE.max && x.g <= KITE.gustMax) b = badge("ok", "Bun");
-        else if (x.w >= KITE.min - 2 && x.w <= KITE.max + 3) b = badge("warn", "Posibil");
-      }
-      if (!b) return "";
-      return `<div class="row"><div class="d">${dayName(d)}</div><div class="v"><span class="t">${Math.round(x.w)}</span> kn, rafale ${Math.round(x.g)} <small>${comp(x.dir)}</small></div>${b}</div>`;
-    }).join("") || NONE;
-    return card("🪁 Kite", SPOTS.kite.name, `Bun: ${KITE.min}–${KITE.max} kn, rafale sub ${KITE.gustMax}`, rows);
-  }},
-  { id: "sup", async render() {
-    const [f, m] = await Promise.all([fc(SPOTS.sup), mr(SPOTS.sup).catch(() => null)]);
-    const rows = f.daily.time.map((d, i) => {
-      const x = windDay(f, i);
-      const wv = m ? Math.max(...hours(m.hourly, i, "wave_height").filter(v => v != null)) : null;
-      let b = null;
-      const waveOk = wv == null || wv <= SUP.waveMax;
-      if (!(x.off && x.w > 5)) {
-        if (x.w <= SUP.windMax && waveOk) b = badge("ok", "Bun");
-        else if (x.w <= SUP.windMax + 3 && (wv == null || wv <= SUP.waveMax + 0.3)) b = badge("warn", "Posibil");
-      }
-      if (!b) return "";
-      return `<div class="row"><div class="d">${dayName(d)}</div><div class="v"><span class="t">${Math.round(x.w)}</span> kn <small>${comp(x.dir)}</small>${wv != null ? `, val ${wv.toFixed(1)} m` : ""}</div>${b}</div>`;
-    }).join("") || NONE;
-    return card("🏄 SUP", SPOTS.sup.name, `Bun: vânt sub ${SUP.windMax} kn, val sub ${SUP.waveMax} m`, rows);
-  }},
   { id: "vreme", async render() {
     const f = await fc(SPOTS.vreme), dl = f.daily;
-    const rows = dl.time.map((d, i) => `<div class="row"><div class="d">${dayName(d)}</div><div class="v">${wx(dl.weather_code[i])} <span class="t">${Math.round(dl.temperature_2m_min[i])}°</span> / <span class="t">${Math.round(dl.temperature_2m_max[i])}°</span> <small>${dl.precipitation_sum[i] > 0.1 ? "🌧 " + dl.precipitation_sum[i].toFixed(1) + " mm" : ""}</small></div></div>`).join("");
-    return card("🌡️ Vremea", SPOTS.vreme.name, "Min / max pe zile", rows);
+    const tiles = dl.time.map((d, i) => {
+      const mm = dl.precipitation_sum[i];
+      return `<div class="wd"><b>${dayName(d)}</b>${wx(dl.weather_code[i])}<br><span class="tt">${Math.round(dl.temperature_2m_min[i])}°/${Math.round(dl.temperature_2m_max[i])}°</span><br>💨 ${Math.round(dl.wind_speed_10m_max[i])} kn<br>🌧 ${mm > 0.1 ? mm.toFixed(1) : "0"} mm</div>`;
+    }).join("");
+    return card("🌡️ Vremea", SPOTS.vreme.name, "min/max · vânt maxim · ploaie", `<div class="wg">${tiles}</div>`);
+  }},
+  { id: "spots", async render() {
+    const [fk, fs, m] = await Promise.all([fc(SPOTS.kite), fc(SPOTS.sup), mr(SPOTS.sup).catch(() => null)]);
+    const kite = fk.daily.time.map((d, i) => {
+      const x = windDay(fk, i);
+      let c = null;
+      if (!x.off) {
+        if (x.w >= KITE.min && x.w <= KITE.max && x.g <= KITE.gustMax) c = "ok";
+        else if (x.w >= KITE.min - 2 && x.w <= KITE.max + 3) c = "warn";
+      }
+      return c ? `<div class="sr"><span class="d">${dayName(d)}</span><span>${Math.round(x.w)} kn ${comp(x.dir)}</span><i class="dot ${c}"></i></div>` : "";
+    }).join("") || NONE;
+    const sup = fs.daily.time.map((d, i) => {
+      const x = windDay(fs, i);
+      const wv = m ? Math.max(...hours(m.hourly, i, "wave_height").filter(v => v != null)) : null;
+      let c = null;
+      if (!(x.off && x.w > 5)) {
+        if (x.w <= SUP.windMax && (wv == null || wv <= SUP.waveMax)) c = "ok";
+        else if (x.w <= SUP.windMax + 3 && (wv == null || wv <= SUP.waveMax + 0.3)) c = "warn";
+      }
+      return c ? `<div class="sr"><span class="d">${dayName(d)}</span><span>${Math.round(x.w)} kn${wv != null ? " · " + wv.toFixed(1) + "m" : ""}</span><i class="dot ${c}"></i></div>` : "";
+    }).join("") || NONE;
+    return `<div class="card"><div class="sp"><div><h3>🪁 Kite</h3><div class="sub">${SPOTS.kite.name}</div>${kite}</div><div><h3>🏄 SUP</h3><div class="sub">${SPOTS.sup.name}</div>${sup}</div></div><div class="sub" style="margin:8px 0 0">🟢 bun · 🟠 posibil · doar zilele bune</div></div>`;
   }},
   { id: "todo", async render() { return todoCard(); } }
 ];
 
-const ORDER = ["todo", "vreme", "sup", "kite"];
+const ORDER = ["todo", "vreme", "spots"];
 CARDS.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
 const card = (t, place, sub, rows) => `<div class="card"><h2>${t} · ${place}</h2><div class="sub">${sub}</div>${rows}</div>`;
 
